@@ -5,16 +5,30 @@ set -o errexit
 set -o pipefail
 
 DATA_DIR="${DATA_DIR:-/data}"
-CRONTAB_DIR="$DATA_DIR/crontabs"
+# ArchiveBox's `init` refuses to start in a data dir containing anything it does
+# not recognise (ALLOWED_IN_OUTPUT_DIR), so the crontab cannot live at the top of
+# the volume next to Railway's lost+found. `logs/` is on that allow-list.
+CRONTAB_DIR="$DATA_DIR/logs/crontabs"
 SPOOL_DIR=/var/spool/cron/crontabs
 
 relocate_crontabs() {
+    ab_uid="$(id -u archivebox)"
+    ab_gid="$(id -g archivebox)"
+
+    mkdir -p "$DATA_DIR/logs"
+    # Earlier images kept it one level up; carry those schedules over.
+    if [ -d "$DATA_DIR/crontabs" ] && [ ! -e "$CRONTAB_DIR" ]; then
+        mv "$DATA_DIR/crontabs" "$CRONTAB_DIR"
+    fi
+    rm -rf "$DATA_DIR/crontabs"
+
     mkdir -p "$CRONTAB_DIR"
-    # 1730 root:crontab is what Debian ships; ArchiveBox's entrypoint re-owns
-    # everything under $DATA_DIR to the archivebox user a moment from now, which
-    # leaves the directory writable by the user that runs `crontab`.
+    # 1730 is what Debian ships for the spool dir; the owner is the user that
+    # runs `archivebox schedule`, so it can write its own crontab there.
+    chown "$ab_uid:$ab_gid" "$CRONTAB_DIR"
     chmod 1730 "$CRONTAB_DIR"
-    if [ ! -L "$SPOOL_DIR" ]; then
+
+    if [ "$(readlink "$SPOOL_DIR" || true)" != "$CRONTAB_DIR" ]; then
         rm -rf "$SPOOL_DIR"
         ln -s "$CRONTAB_DIR" "$SPOOL_DIR"
     fi
