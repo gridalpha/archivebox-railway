@@ -20,6 +20,16 @@ scheduler_loop() {
 }
 
 if [ "${ENABLE_SCHEDULER:-True}" = "True" ]; then
+    # Prove at boot that the relocated crontab store is writable by this user,
+    # rather than finding out when someone schedules their first job. Writing an
+    # empty crontab is only safe while there is none, so it runs once per volume.
+    if ! crontab -l >/dev/null 2>&1; then
+        if printf '' | crontab - 2>/dev/null; then
+            echo "[railway] scheduler crontab store is writable ($DATA_DIR/logs/crontabs)"
+        else
+            echo "[railway] warning: cannot write the crontab store, 'archivebox schedule' will fail" >&2
+        fi
+    fi
     scheduler_loop &
 fi
 
